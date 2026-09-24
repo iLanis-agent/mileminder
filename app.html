@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MileMinder - app</title>
+<style>
+  :root { --bg:#0c1416; --card:#132024; --card2:#0f1a1d; --line:#1e3237; --ink:#e8f4f2; --dim:#8fb3ad; --teal:#5eead4; --amber:#fbbf24; --red:#fca5a5; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width:760px; margin:0 auto; padding:28px 20px 64px; }
+  header { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:22px; }
+  header h1 { font-size:26px; margin:0; }
+  header h1 span { color:var(--teal); }
+  header a { color:var(--dim); text-decoration:none; font-size:14px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:20px; margin:0 0 18px; }
+  .card h2 { margin:0 0 14px; font-size:18px; }
+  label { display:block; font-size:12px; letter-spacing:1px; text-transform:uppercase; color:var(--dim); margin:0 0 6px; }
+  input, select { width:100%; background:var(--card2); border:1px solid var(--line); color:var(--ink); border-radius:10px; padding:10px 12px; font-size:16px; }
+  .row3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px; margin-bottom:14px; }
+  .row4 { display:grid; grid-template-columns:1fr 1fr 1fr auto; gap:14px; align-items:end; }
+  button { background:var(--teal); color:#06231e; border:0; font-weight:700; border-radius:10px; padding:11px 22px; font-size:16px; cursor:pointer; }
+  .hint { color:var(--dim); font-size:14px; margin-top:10px; }
+  .stats { display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px; margin-bottom:14px; }
+  .stat { background:var(--card2); border:1px solid var(--line); border-radius:12px; padding:14px; }
+  .stat b { display:block; font-size:26px; font-variant-numeric:tabular-nums; }
+  .stat span { color:var(--dim); font-size:13px; }
+  .b-red { color:var(--red); } .b-amber { color:var(--amber); } .b-teal { color:var(--teal); }
+  .item { display:flex; justify-content:space-between; align-items:center; padding:10px 4px; border-top:1px solid var(--line); }
+  .item .nm { font-size:15px; }
+  .item .dt { color:var(--dim); font-size:13px; margin-top:2px; }
+  .pill { padding:4px 10px; border-radius:999px; font-size:12px; font-weight:700; white-space:nowrap; }
+  .pill.overdue { background:#3a1414; color:var(--red); }
+  .pill.due-soon { background:#3a2c07; color:var(--amber); }
+  .pill.ok { background:#12312c; color:var(--teal); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Mile<span>Minder</span></h1>
+    <a href="index.html">&larr; Home</a>
+  </header>
+
+  <div class="card">
+    <h2>Your car</h2>
+    <div class="row3">
+      <div><label for="f-odo">Current odometer (km)</label><input id="f-odo" type="number" min="0" value="47000"></div>
+      <div><label for="f-avg">Avg km per month</label><input id="f-avg" type="number" min="0" value="1200"></div>
+      <div><label>&nbsp;</label><button id="f-save">Save</button></div>
+    </div>
+    <p class="hint" id="setup-hint">Used to project mileage limits onto calendar dates.</p>
+  </div>
+
+  <div class="card">
+    <h2>Log a service</h2>
+    <div class="row4">
+      <div><label for="f-item">Item</label><select id="f-item"></select></div>
+      <div><label for="f-sodo">Odometer at service</label><input id="f-sodo" type="number" min="0"></div>
+      <div><label for="f-sdate">Date</label><input id="f-sdate" type="date"></div>
+      <button id="f-log">Log</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Where things stand</h2>
+    <div class="stats">
+      <div class="stat"><b id="c-over" class="b-red">0</b><span>overdue</span></div>
+      <div class="stat"><b id="c-soon" class="b-amber">0</b><span>due soon</span></div>
+      <div class="stat"><b id="c-ok" class="b-teal">0</b><span>on track</span></div>
+    </div>
+    <div id="items"></div>
+  </div>
+</div>
+<script src="engine.js"></script>
+<script>
+(function () {
+  'use strict';
+  var KEY = 'mileminder-data';
+  var $ = function (id) { return document.getElementById(id); };
+
+  function load() {
+    try { return JSON.parse(localStorage.getItem(KEY)) || { odo: 47000, avg: 1200, records: {} }; }
+    catch (e) { return { odo: 47000, avg: 1200, records: {} }; }
+  }
+  function save(d) { localStorage.setItem(KEY, JSON.stringify(d)); }
+
+  var sel = $('f-item');
+  MileEngine.ITEMS.forEach(function (it) {
+    var o = document.createElement('option');
+    o.value = it.id; o.textContent = it.label;
+    sel.appendChild(o);
+  });
+
+  function describe(s) {
+    var bits = [];
+    if (s.kmLeft !== null) bits.push(s.kmLeft <= 0 ? Math.abs(s.kmLeft) + ' km over' : s.kmLeft.toLocaleString() + ' km left');
+    if (s.daysLeft !== null) bits.push(s.daysLeft <= 0 ? Math.abs(s.daysLeft) + ' days over' : s.daysLeft + ' days left');
+    if (!bits.length) bits.push('time only');
+    return bits.join(' - ') + ' (' + s.reason + ')';
+  }
+
+  function render() {
+    var d = load();
+    var ov = MileEngine.overview(d.records, +d.odo || 0, new Date(), +d.avg || 0);
+    $('c-over').textContent = ov.counts.overdue;
+    $('c-soon').textContent = ov.counts['due-soon'];
+    $('c-ok').textContent = ov.counts.ok;
+    var box = $('items'); box.innerHTML = '';
+    ov.items.forEach(function (s) {
+      var div = document.createElement('div');
+      div.className = 'item';
+      var l = document.createElement('div');
+      var nm = document.createElement('div'); nm.className = 'nm'; nm.textContent = s.label;
+      var dt = document.createElement('div'); dt.className = 'dt'; dt.textContent = describe(s);
+      l.appendChild(nm); l.appendChild(dt);
+      var p = document.createElement('span');
+      p.className = 'pill ' + s.state;
+      p.textContent = s.state === 'overdue' ? 'OVERDUE' : s.state === 'due-soon' ? 'DUE SOON' : 'OK';
+      div.appendChild(l); div.appendChild(p); box.appendChild(div);
+    });
+  }
+
+  $('f-save').addEventListener('click', function () {
+    var d = load();
+    d.odo = +$('f-odo').value || 0; d.avg = +$('f-avg').value || 0;
+    save(d); render();
+  });
+  $('f-log').addEventListener('click', function () {
+    var d = load();
+    var odo = +$('f-sodo').value || (+d.odo || 0);
+    var dt = $('f-sdate').value ? $('f-sdate').value + 'T12:00:00' : new Date().toISOString();
+    d.records[$('f-item').value] = { odo: odo, at: dt };
+    save(d); render();
+  });
+
+  var d0 = load();
+  $('f-odo').value = d0.odo; $('f-avg').value = d0.avg; $('f-sodo').value = d0.odo;
+  render();
+})();
+</script>
+</body>
+</html>
